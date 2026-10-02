@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>이슈플러스 썸네일 생성기</title>
+
+<!-- 홈 화면에 추가했을 때 앱처럼 전체화면으로 열리게 하는 설정 (iOS) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="이슈플러스">
+<!-- 안드로이드 크롬용 -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#090d14">
+
+<!-- 홈 화면 아이콘 (직접 그린 아이콘, 이미지 파일 없이 SVG로 생성) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23090d14'/%3E%3Crect x='30' y='42' width='40' height='16' rx='4' fill='%23ffc400'/%3E%3Crect x='42' y='30' width='16' height='40' rx='4' fill='%23ffc400'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23090d14'/%3E%3Crect x='30' y='42' width='40' height='16' rx='4' fill='%23ffc400'/%3E%3Crect x='42' y='30' width='16' height='40' rx='4' fill='%23ffc400'/%3E%3C/svg%3E">
+
+<!-- manifest: 안드로이드에서 "설치"로 인식되도록 하는 앱 정보 (data URI, 별도 서버 필요 없음) -->
+<link rel="manifest" id="manifestLink">
+
+<style>
+:root{
+  --bg:#090d14;--panel:#111722;--panel2:#171f2b;--line:#2a3545;
+  --text:#f5f7fb;--muted:#9da8b7;--yellow:#ffc400;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:Pretendard,"Noto Sans KR",Arial,sans-serif;
+  overscroll-behavior-y:none;
+}
+body{
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+
+/* ---------- 상단 탭 ---------- */
+.topbar{
+  position:sticky;top:0;z-index:20;
+  background:#0b0f18;border-bottom:1px solid var(--line);
+  padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;
+}
+.topbar h1{
+  margin:0 0 10px;font-size:16px;text-align:center;color:#dfe6ef;font-weight:800;
+}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tabBtn{
+  padding:12px 8px;border-radius:12px;border:1px solid var(--line);
+  background:var(--panel);color:var(--muted);font-weight:800;font-size:14px;
+  cursor:pointer;
+}
+.tabBtn.active{background:var(--yellow);color:#171200;border-color:var(--yellow)}
+
+/* ---------- 공통 레이아웃 (모바일 1열) ---------- */
+.app{display:none;flex-direction:column;gap:16px;padding:16px;max-width:520px;margin:0 auto}
+.app.active{display:flex}
+
+.previewWrap{
+  position:relative;background:#060a10;border:1px solid var(--line);
+  border-radius:18px;display:flex;align-items:center;justify-content:center;
+  padding:14px;overflow:hidden;
+}
+.previewWrap.dragover::after{
+  content:"사진을 여기에 놓으세요";
+  position:absolute;inset:14px;display:flex;align-items:center;justify-content:center;
+  border:3px dashed var(--yellow);border-radius:14px;
+  background:rgba(5,10,18,.82);color:#fff;font-size:18px;font-weight:900;
+  z-index:5;pointer-events:none;text-align:center;padding:10px;
+}
+canvas{
+  width:100%;height:auto;max-width:420px;
+  aspect-ratio:9/16;background:#0c1420;border-radius:8px;
+  box-shadow:0 20px 70px rgba(0,0,0,.52);
+  cursor:grab;touch-action:none;
+}
+canvas:active{cursor:grabbing}
+
+.panel{
+  background:var(--panel);border:1px solid var(--line);
+  border-radius:18px;padding:16px;
+}
+.desc{font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:14px}
+.box{
+  background:var(--panel2);border:1px solid var(--line);
+  border-radius:14px;padding:14px;margin-bottom:12px;
+}
+.box h2{font-size:14px;margin:0 0 12px}
+label{display:block;font-size:12px;color:#dce3ec;margin:11px 0 6px}
+input[type=text]{
+  width:100%;padding:12px;border:1px solid #374357;
+  border-radius:9px;background:#0c121b;color:#fff;font:inherit;outline:none;
+}
+input[type=range]{width:100%}
+input[type=color]{width:50px;height:38px;border:0;background:none;padding:0}
+input[type=file]{position:absolute;left:-9999px}
+button,.fileBtn{
+  display:block;width:100%;padding:14px;border:0;border-radius:10px;
+  font-weight:900;cursor:pointer;text-align:center;font-size:15px;
+}
+.fileBtn{background:#2c3747;color:#fff}
+.saveBtn{background:var(--yellow);color:#171200}
+.dropBox{
+  margin-top:10px;padding:18px 12px;border:2px dashed #445168;
+  border-radius:12px;text-align:center;background:#0c121b;
+  color:#aab5c4;font-size:12px;cursor:pointer;
+}
+.dropBox.dragover{border-color:var(--yellow);color:#fff;background:#171b20}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.inline{display:flex;align-items:center;gap:8px}
+.value{min-width:48px;text-align:right;color:var(--yellow);font-size:12px}
+.note{font-size:11px;color:var(--muted);line-height:1.55;margin-top:8px}
+.lock{
+  padding:11px 12px;border:1px dashed #3d495c;border-radius:10px;
+  background:#0c121b;color:#ccd4df;font-size:12px;line-height:1.6;
+}
+.installTip{
+  max-width:520px;margin:0 auto;padding:0 16px 20px;
+}
+.installTip details{
+  background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 14px;
+}
+.installTip summary{font-size:13px;font-weight:800;color:var(--yellow);cursor:pointer}
+.installTip p{font-size:12px;color:var(--muted);line-height:1.6;margin:8px 0 0}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>이슈플러스 썸네일 생성기</h1>
+  <div class="tabs">
+    <button class="tabBtn active" id="tabA">세로형 9:16</button>
+    <button class="tabBtn" id="tabB">매거진형 9:16</button>
+  </div>
+</div>
+
+<!-- ===================== 도구 A: 세로형 ===================== -->
+<div class="app active" id="appA">
+  <section class="previewWrap" id="a_previewWrap">
+    <canvas id="a_canvas" width="1080" height="1920"></canvas>
+  </section>
+
+  <aside class="panel">
+    <div class="desc">
+      가로 9, 세로 16 비율의 1080×1920 세로형 썸네일입니다.
+      사진 선택 또는 파일 끌어놓기를 모두 지원합니다.
+    </div>
+
+    <div class="box">
+      <h2>1. 사진</h2>
+      <label class="fileBtn" for="a_imageInput">사진 선택</label>
+      <input id="a_imageInput" type="file" accept="image/*">
+      <div class="dropBox" id="a_dropBox">사진 파일을 여기에 끌어놓으세요</div>
+
+      <div class="row">
+        <div>
+          <label>사진 확대</label>
+          <div class="inline">
+            <input id="a_zoom" type="range" min="1" max="3" step="0.01" value="1">
+            <span class="value" id="a_zoomV">1.00</span>
+          </div>
+        </div>
+        <div>
+          <label>사진 밝기</label>
+          <div class="inline">
+            <input id="a_brightness" type="range" min="45" max="125" step="1" value="92">
+            <span class="value" id="a_brightnessV">92%</span>
+          </div>
+        </div>
+      </div>
+      <div class="note">
+        사진이 들어간 뒤 미리보기 안에서 손가락(또는 마우스)으로 끌면 사진 위치가 움직입니다.
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>2. 제목 3줄</h2>
+      <label>제목 1</label>
+      <input id="a_line1" type="text" value="이재명 대통령 탄핵">
+      <label>제목 2</label>
+      <input id="a_line2" type="text" value="청원 57만명 동의 마감">
+      <label>제목 3</label>
+      <input id="a_line3" type="text" value="국회 법사위로 회부">
+
+      <div class="row" style="margin-top:12px">
+        <div>
+          <label>강조색</label>
+          <div class="inline">
+            <input id="a_accentColor" type="color" value="#ffc400">
+            <span class="value">노란색</span>
+          </div>
+        </div>
+        <div>
+          <label>일반 글자색</label>
+          <div class="inline">
+            <input id="a_textColor" type="color" value="#ffffff">
+            <span class="value">흰색</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>고정된 디자인</h2>
+      <div class="lock">
+        이슈 플러스 꼬리표<br>
+        3줄 메인 제목 위치와 간격<br>
+        하단 중앙 ISSUE + PLUS 로고
+      </div>
+    </div>
+
+    <button class="saveBtn" id="a_saveBtn">PNG 저장</button>
+  </aside>
+</div>
+
+<!-- ===================== 도구 B: 매거진형 ===================== -->
+<div class="app" id="appB">
+  <section class="previewWrap" id="b_previewWrap">
+    <canvas id="b_canvas" width="1080" height="1920"></canvas>
+  </section>
+
+  <aside class="panel">
+    <div class="desc">
+      가로 9, 세로 16 비율의 1080×1920 세로 이미지입니다.
+      사진과 문구를 바꿔 매번 사용할 수 있습니다.
+    </div>
+
+    <div class="box">
+      <h2>1. 사진</h2>
+      <label class="fileBtn" for="b_imageInput">사진 선택</label>
+      <input id="b_imageInput" type="file" accept="image/*">
+      <div class="dropBox" id="b_dropBox">사진 파일을 여기에 끌어놓으세요</div>
+
+      <div class="row">
+        <div>
+          <label>사진 확대</label>
+          <div class="inline">
+            <input id="b_zoom" type="range" min="1" max="3" step="0.01" value="1">
+            <span class="value" id="b_zoomV">1.00</span>
+          </div>
+        </div>
+        <div>
+          <label>사진 밝기</label>
+          <div class="inline">
+            <input id="b_brightness" type="range" min="35" max="130" step="1" value="78">
+            <span class="value" id="b_brightnessV">78%</span>
+          </div>
+        </div>
+      </div>
+      <div class="note">미리보기에서 사진을 손가락(또는 마우스)으로 끌어 위치를 조절할 수 있습니다.</div>
+    </div>
+
+    <div class="box">
+      <h2>2. 문구</h2>
+      <label>상단 카테고리</label>
+      <input id="b_category" type="text" value="연예 · 경제 · 사회 · 정치 · 스포츠 등 모두">
+
+      <label>중앙 이름</label>
+      <input id="b_centerName" type="text" value="[이슈플러스]">
+
+      <label>하단 문구</label>
+      <input id="b_followText" type="text" value="- 팔로우하고 더 빠르게 소식 보기 -">
+
+      <label>강조색</label>
+      <div class="inline">
+        <input id="b_accentColor" type="color" value="#ffc400">
+        <span class="value">노란색</span>
+      </div>
+    </div>
+
+    <button class="saveBtn" id="b_saveBtn">PNG 저장</button>
+  </aside>
+</div>
+
+<div class="installTip">
+  <details>
+    <summary>📱 폰 홈 화면에 앱처럼 설치하는 방법</summary>
+    <p>
+      <b>아이폰(사파리)</b>: 공유 버튼 → "홈 화면에 추가"<br>
+      <b>안드로이드(크롬)</b>: 오른쪽 위 점 3개 메뉴 → "홈 화면에 추가" 또는 "앱 설치"<br><br>
+      이 파일은 하나의 HTML 파일 안에 모든 기능이 들어있어서, 한 번 저장해두면 인터넷이 없어도 계속 쓸 수 있고 유효기간 없이 영구적으로 사용할 수 있습니다.
+    </p>
+  </details>
+</div>
+
+<script>
+/* ---------- 탭 전환 ---------- */
+const tabA=document.getElementById('tabA');
+const tabB=document.getElementById('tabB');
+const appA=document.getElementById('appA');
+const appB=document.getElementById('appB');
+tabA.addEventListener('click',()=>{
+  tabA.classList.add('active');tabB.classList.remove('active');
+  appA.classList.add('active');appB.classList.remove('active');
+});
+tabB.addEventListener('click',()=>{
+  tabB.classList.add('active');tabA.classList.remove('active');
+  appB.classList.add('active');appA.classList.remove('active');
+});
+
+/* ---------- manifest (data URI, 서버 없이도 동작) ---------- */
+(function(){
+  const manifest={
+    name:"이슈플러스 썸네일 생성기",
+    short_name:"이슈플러스",
+    start_url:".",
+    display:"standalone",
+    background_color:"#090d14",
+    theme_color:"#090d14",
+    icons:[]
+  };
+  const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+  document.getElementById('manifestLink').href=URL.createObjectURL(blob);
+})();
+
+/* =========================================================
+   도구 A: 세로형 9:16
+   ========================================================= */
+(function(){
+  const $=id=>document.getElementById('a_'+id);
+  const canvas=$('canvas');
+  const ctx=canvas.getContext('2d');
+
+  let image=new Image();
+  let imageLoaded=false;
+  let offsetX=0,offsetY=0;
+  let isDragging=false,lastX=0,lastY=0;
+
+  function isImageFile(file){
+    if(!file)return false;
+    if(file.type && file.type.startsWith('image/'))return true;
+    return /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name||'');
+  }
+
+  function loadFile(file){
+    if(!isImageFile(file)){
+      alert('PNG, JPG, JPEG, WEBP 등 이미지 파일을 넣어 주세요.');
+      return;
+    }
+    const reader=new FileReader();
+    reader.onload=event=>{
+      const next=new Image();
+      next.onload=()=>{
+        image=next;
+        imageLoaded=true;
+        offsetX=0;
+        offsetY=0;
+        $('zoom').value='1';
+        updateLabels();
+        draw();
+      };
+      next.onerror=()=>alert('사진을 불러오지 못했습니다.');
+      next.src=event.target.result;
+    };
+    reader.onerror=()=>alert('파일을 읽지 못했습니다.');
+    reader.readAsDataURL(file);
+  }
+
+  $('imageInput').addEventListener('change',e=>{
+    if(e.target.files && e.target.files[0])loadFile(e.target.files[0]);
+  });
+
+  const dropTargets=[$('dropBox'),$('previewWrap'),canvas];
+
+  dropTargets.forEach(target=>{
+    ['dragenter','dragover'].forEach(type=>{
+      target.addEventListener(type,e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        $('dropBox').classList.add('dragover');
+        $('previewWrap').classList.add('dragover');
+      });
+    });
+
+    ['dragleave','dragend'].forEach(type=>{
+      target.addEventListener(type,e=>{
+        e.preventDefault();
+        e.stopPropagation();
+        $('dropBox').classList.remove('dragover');
+        $('previewWrap').classList.remove('dragover');
+      });
+    });
+
+    target.addEventListener('drop',e=>{
+      e.preventDefault();
+      e.stopPropagation();
+      $('dropBox').classList.remove('dragover');
+      $('previewWrap').classList.remove('dragover');
+
+      let file=null;
+      if(e.dataTransfer.files && e.dataTransfer.files.length){
+        file=e.dataTransfer.files[0];
+      }else if(e.dataTransfer.items && e.dataTransfer.items.length){
+        for(const item of e.dataTransfer.items){
+          if(item.kind==='file'){
+            file=item.getAsFile();
+            if(file)break;
+          }
+        }
+      }
+      if(file)loadFile(file);
+    });
+  });
+
+  $('dropBox').addEventListener('click',()=>$('imageInput').click());
+
+  function coverScale(){
+    if(!imageLoaded)return 1;
+    return Math.max(canvas.width/image.width,canvas.height/image.height);
+  }
+
+  function drawBackground(){
+    if(imageLoaded){
+      const scale=coverScale()*Number($('zoom').value);
+      const w=image.width*scale;
+      const h=image.height*scale;
+      const x=(canvas.width-w)/2+offsetX;
+      const y=(canvas.height-h)/2+offsetY;
+      ctx.save();
+      ctx.filter=`brightness(${$('brightness').value}%)`;
+      ctx.drawImage(image,x,y,w,h);
+      ctx.restore();
+    }else{
+      const g=ctx.createLinearGradient(0,0,1080,1920);
+      g.addColorStop(0,'#153776');
+      g.addColorStop(.5,'#102b56');
+      g.addColorStop(1,'#071321');
+      ctx.fillStyle=g;
+      ctx.fillRect(0,0,1080,1920);
+      ctx.fillStyle='rgba(255,255,255,.08)';
+      ctx.beginPath();
+      ctx.arc(540,610,280,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function fitFont(text,maxWidth,start){
+    let size=start;
+    while(size>44){
+      ctx.font=`900 ${size}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+      if(ctx.measureText(text).width<=maxWidth)return size;
+      size--;
+    }
+    return size;
+  }
+
+  function drawPlusLogo(centerX,y){
+    const issue='ISSUE';
+    const plusText='PLUS';
+
+    ctx.font='900 56px Arial,sans-serif';
+    ctx.textAlign='left';
+    ctx.textBaseline='alphabetic';
+
+    const issueMetrics=ctx.measureText(issue);
+    const plusMetrics=ctx.measureText(plusText);
+    const issueW=issueMetrics.width;
+    const plusW=plusMetrics.width;
+
+    const iconSize=44;
+    const leftGap=13;
+    const rightGap=13;
+    const totalW=issueW+leftGap+iconSize+rightGap+plusW;
+    const startX=centerX-(totalW/2);
+
+    const ascent=Math.max(
+      issueMetrics.actualBoundingBoxAscent || 41,
+      plusMetrics.actualBoundingBoxAscent || 41
+    );
+    const descent=Math.max(
+      issueMetrics.actualBoundingBoxDescent || 1,
+      plusMetrics.actualBoundingBoxDescent || 1
+    );
+
+    const visualCenterY=y+28;
+    const baselineY=visualCenterY+(ascent-descent)/2;
+
+    ctx.fillStyle=$('textColor').value;
+    ctx.fillText(issue,startX,baselineY);
+
+    const iconX=startX+issueW+leftGap;
+    const iconY=visualCenterY-(iconSize/2);
+
+    ctx.fillStyle=$('accentColor').value;
+    ctx.beginPath();
+    ctx.roundRect(iconX,iconY,iconSize,iconSize,8);
+    ctx.fill();
+
+    const plusLength=24;
+    const plusThickness=8;
+    const iconCenterX=iconX+(iconSize/2);
+    const iconCenterY=iconY+(iconSize/2);
+
+    ctx.fillStyle='#111111';
+    ctx.fillRect(
+      iconCenterX-(plusLength/2),
+      iconCenterY-(plusThickness/2),
+      plusLength,
+      plusThickness
+    );
+    ctx.fillRect(
+      iconCenterX-(plusThickness/2),
+      iconCenterY-(plusLength/2),
+      plusThickness,
+      plusLength
+    );
+
+    ctx.fillStyle=$('textColor').value;
+    ctx.fillText(
+      plusText,
+      iconX+iconSize+rightGap,
+      baselineY
+    );
+
+    ctx.textBaseline='top';
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,1080,1920);
+    drawBackground();
+
+    ctx.fillStyle='rgba(2,17,42,.18)';
+    ctx.fillRect(0,0,1080,1920);
+
+    const grad=ctx.createLinearGradient(0,560,0,1920);
+    grad.addColorStop(0,'rgba(0,0,0,0)');
+    grad.addColorStop(.46,'rgba(2,10,22,.24)');
+    grad.addColorStop(.68,'rgba(2,10,22,.84)');
+    grad.addColorStop(1,'rgba(1,8,17,.98)');
+    ctx.fillStyle=grad;
+    ctx.fillRect(0,0,1080,1920);
+
+    const tagX=72,tagY=1020,tagW=250,tagH=72;
+    ctx.fillStyle=$('accentColor').value;
+    ctx.fillRect(tagX,tagY,tagW,tagH);
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillStyle='#111111';
+    ctx.font='900 39px Pretendard,"Noto Sans KR",Arial,sans-serif';
+    ctx.fillText('이슈 플러스',tagX+tagW/2,tagY+tagH/2+1);
+
+    ctx.textAlign='left';
+    ctx.textBaseline='top';
+    const x=72,maxWidth=936;
+    const texts=[$('line1').value,$('line2').value,$('line3').value];
+    const colors=[$('textColor').value,$('accentColor').value,$('textColor').value];
+    const ys=[1130,1255,1380];
+
+    texts.forEach((text,index)=>{
+      const size=fitFont(text,maxWidth,88);
+      ctx.font=`900 ${size}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+      ctx.fillStyle=colors[index];
+      ctx.shadowColor='rgba(0,0,0,.65)';
+      ctx.shadowBlur=8;
+      ctx.fillText(text,x,ys[index]);
+      ctx.shadowBlur=0;
+    });
+
+    drawPlusLogo(540,1702);
+  }
+
+  function updateLabels(){
+    $('zoomV').textContent=Number($('zoom').value).toFixed(2);
+    $('brightnessV').textContent=$('brightness').value+'%';
+  }
+
+  ['line1','line2','line3','zoom','brightness','accentColor','textColor'].forEach(id=>{
+    $(id).addEventListener('input',()=>{
+      updateLabels();
+      draw();
+    });
+  });
+
+  function canvasPoint(e){
+    const r=canvas.getBoundingClientRect();
+    return {
+      x:(e.clientX-r.left)*(canvas.width/r.width),
+      y:(e.clientY-r.top)*(canvas.height/r.height)
+    };
+  }
+
+  canvas.addEventListener('pointerdown',e=>{
+    if(!imageLoaded)return;
+    isDragging=true;
+    const p=canvasPoint(e);
+    lastX=p.x;lastY=p.y;
+    canvas.setPointerCapture(e.pointerId);
+  });
+
+  canvas.addEventListener('pointermove',e=>{
+    if(!isDragging||!imageLoaded)return;
+    const p=canvasPoint(e);
+    offsetX+=p.x-lastX;
+    offsetY+=p.y-lastY;
+    lastX=p.x;lastY=p.y;
+    draw();
+  });
+
+  canvas.addEventListener('pointerup',()=>isDragging=false);
+  canvas.addEventListener('pointercancel',()=>isDragging=false);
+
+  canvas.addEventListener('wheel',e=>{
+    if(!imageLoaded)return;
+    e.preventDefault();
+    let z=Number($('zoom').value)+(e.deltaY<0?.05:-.05);
+    z=Math.max(1,Math.min(3,z));
+    $('zoom').value=String(z);
+    updateLabels();
+    draw();
+  },{passive:false});
+
+  $('saveBtn').addEventListener('click', async ()=>{
+    draw();
+    await issuePlusSaveCanvas(canvas,'issue_plus_9x16_1080x1920.png');
+  });
+
+  updateLabels();
+  draw();
+})();
+
+/* =========================================================
+   도구 B: 매거진형 9:16
+   ========================================================= */
+(function(){
+  const $=id=>document.getElementById('b_'+id);
+  const canvas=$('canvas');
+  const ctx=canvas.getContext('2d');
+
+  let image=new Image();
+  let imageLoaded=false;
+  let offsetX=0,offsetY=0;
+  let isDragging=false,lastX=0,lastY=0;
+
+  function isImageFile(file){
+    return !!file && (
+      (file.type && file.type.startsWith('image/')) ||
+      /\.(png|jpe?g|webp|gif|bmp)$/i.test(file.name||'')
+    );
+  }
+
+  function loadFile(file){
+    if(!isImageFile(file)){
+      alert('이미지 파일을 넣어 주세요.');
+      return;
+    }
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const next=new Image();
+      next.onload=()=>{
+        image=next;
+        imageLoaded=true;
+        offsetX=0;offsetY=0;
+        $('zoom').value='1';
+        updateLabels();
+        draw();
+      };
+      next.onerror=()=>alert('사진을 불러오지 못했습니다.');
+      next.src=e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  $('imageInput').addEventListener('change',e=>{
+    if(e.target.files && e.target.files[0])loadFile(e.target.files[0]);
+  });
+  $('dropBox').addEventListener('click',()=>$('imageInput').click());
+
+  [$('dropBox'),$('previewWrap'),canvas].forEach(target=>{
+    ['dragenter','dragover'].forEach(type=>target.addEventListener(type,e=>{
+      e.preventDefault();e.stopPropagation();
+      $('dropBox').classList.add('dragover');
+      $('previewWrap').classList.add('dragover');
+    }));
+    ['dragleave','dragend'].forEach(type=>target.addEventListener(type,e=>{
+      e.preventDefault();e.stopPropagation();
+      $('dropBox').classList.remove('dragover');
+      $('previewWrap').classList.remove('dragover');
+    }));
+    target.addEventListener('drop',e=>{
+      e.preventDefault();e.stopPropagation();
+      $('dropBox').classList.remove('dragover');
+      $('previewWrap').classList.remove('dragover');
+      const file=e.dataTransfer.files && e.dataTransfer.files[0];
+      if(file)loadFile(file);
+    });
+  });
+
+  function coverScale(){
+    if(!imageLoaded)return 1;
+    return Math.max(canvas.width/image.width,canvas.height/image.height);
+  }
+
+  function fitFont(text,maxWidth,start,min,weight){
+    if(min===undefined)min=30;
+    if(weight===undefined)weight=800;
+    let size=start;
+    while(size>min){
+      ctx.font=`${weight} ${size}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+      if(ctx.measureText(text).width<=maxWidth)break;
+      size--;
+    }
+    return size;
+  }
+
+  function drawBackground(){
+    if(imageLoaded){
+      const scale=coverScale()*Number($('zoom').value);
+      const w=image.width*scale,h=image.height*scale;
+      const x=(1080-w)/2+offsetX;
+      const y=(1920-h)/2+offsetY;
+      ctx.save();
+      ctx.filter=`brightness(${$('brightness').value}%)`;
+      ctx.drawImage(image,x,y,w,h);
+      ctx.restore();
+    }else{
+      const g=ctx.createLinearGradient(0,0,0,1920);
+      g.addColorStop(0,'#202f4b');
+      g.addColorStop(.5,'#233448');
+      g.addColorStop(1,'#10151d');
+      ctx.fillStyle=g;
+      ctx.fillRect(0,0,1080,1920);
+    }
+  }
+
+  function drawIssuePlusLogo(centerX,centerY){
+    const issue='ISSUE';
+    const plus='PLUS';
+
+    ctx.font='900 78px Arial,sans-serif';
+    ctx.textAlign='left';
+    ctx.textBaseline='alphabetic';
+
+    const im=ctx.measureText(issue);
+    const pm=ctx.measureText(plus);
+    const iconSize=58;
+    const gap=18;
+    const total=im.width+gap+iconSize+gap+pm.width;
+    const startX=centerX-total/2;
+
+    const ascent=Math.max(im.actualBoundingBoxAscent||56,pm.actualBoundingBoxAscent||56);
+    const descent=Math.max(im.actualBoundingBoxDescent||2,pm.actualBoundingBoxDescent||2);
+    const baseline=centerY+(ascent-descent)/2;
+
+    ctx.fillStyle='#ffffff';
+    ctx.fillText(issue,startX,baseline);
+
+    const iconX=startX+im.width+gap;
+    const iconY=centerY-iconSize/2;
+    ctx.fillStyle=$('accentColor').value;
+    ctx.beginPath();
+    ctx.roundRect(iconX,iconY,iconSize,iconSize,10);
+    ctx.fill();
+
+    const cx=iconX+iconSize/2;
+    const cy=iconY+iconSize/2;
+    ctx.fillStyle='#0a1114';
+    ctx.fillRect(cx-16,cy-5,32,10);
+    ctx.fillRect(cx-5,cy-16,10,32);
+
+    ctx.fillStyle='#ffffff';
+    ctx.fillText(plus,iconX+iconSize+gap,baseline);
+
+    ctx.textAlign='center';
+    ctx.textBaseline='top';
+    ctx.font='500 23px Arial,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,.88)';
+    ctx.fillText('ISSUE PLUS',centerX,centerY+54);
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,1080,1920);
+    drawBackground();
+
+    ctx.fillStyle='rgba(0,6,14,.34)';
+    ctx.fillRect(0,0,1080,1920);
+
+    let g=ctx.createLinearGradient(0,0,0,500);
+    g.addColorStop(0,'rgba(2,7,16,.72)');
+    g.addColorStop(1,'rgba(2,7,16,0)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,1080,560);
+
+    g=ctx.createLinearGradient(0,950,0,1920);
+    g.addColorStop(0,'rgba(0,0,0,0)');
+    g.addColorStop(.7,'rgba(0,0,0,.30)');
+    g.addColorStop(1,'rgba(0,0,0,.56)');
+    ctx.fillStyle=g;
+    ctx.fillRect(0,850,1080,1070);
+
+    ctx.textAlign='center';
+    ctx.textBaseline='top';
+
+    const category=$('category').value;
+    const categorySize=fitFont(category,920,48,30,800);
+    ctx.font=`800 ${categorySize}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+    ctx.fillStyle=$('accentColor').value;
+    ctx.shadowColor='rgba(0,0,0,.75)';
+    ctx.shadowBlur=10;
+    ctx.fillText(category,540,560);
+    ctx.shadowBlur=0;
+
+    const centerName=$('centerName').value;
+    const nameSize=fitFont(centerName,760,56,34,800);
+    ctx.font=`800 ${nameSize}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+    ctx.fillStyle='#ffffff';
+    ctx.shadowColor='rgba(0,0,0,.75)';
+    ctx.shadowBlur=10;
+    ctx.fillText(centerName,540,755);
+    ctx.shadowBlur=0;
+
+    drawIssuePlusLogo(540,1020);
+
+    const follow=$('followText').value;
+    const followSize=fitFont(follow,860,42,28,700);
+    ctx.font=`700 ${followSize}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
+    ctx.fillStyle=$('accentColor').value;
+    ctx.shadowColor='rgba(0,0,0,.8)';
+    ctx.shadowBlur=10;
+    ctx.fillText(follow,540,1390);
+    ctx.shadowBlur=0;
+  }
+
+  function updateLabels(){
+    $('zoomV').textContent=Number($('zoom').value).toFixed(2);
+    $('brightnessV').textContent=$('brightness').value+'%';
+  }
+  ['category','centerName','followText','accentColor','zoom','brightness'].forEach(id=>{
+    $(id).addEventListener('input',()=>{updateLabels();draw();});
+  });
+
+  function canvasPoint(e){
+    const r=canvas.getBoundingClientRect();
+    return {
+      x:(e.clientX-r.left)*(canvas.width/r.width),
+      y:(e.clientY-r.top)*(canvas.height/r.height)
+    };
+  }
+  canvas.addEventListener('pointerdown',e=>{
+    if(!imageLoaded)return;
+    isDragging=true;
+    const p=canvasPoint(e);lastX=p.x;lastY=p.y;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove',e=>{
+    if(!isDragging||!imageLoaded)return;
+    const p=canvasPoint(e);
+    offsetX+=p.x-lastX;offsetY+=p.y-lastY;
+    lastX=p.x;lastY=p.y;
+    draw();
+  });
+  canvas.addEventListener('pointerup',()=>isDragging=false);
+  canvas.addEventListener('pointercancel',()=>isDragging=false);
+  canvas.addEventListener('wheel',e=>{
+    if(!imageLoaded)return;
+    e.preventDefault();
+    let z=Number($('zoom').value)+(e.deltaY<0?.05:-.05);
+    z=Math.max(1,Math.min(3,z));
+    $('zoom').value=String(z);
+    updateLabels();draw();
+  },{passive:false});
+
+  $('saveBtn').addEventListener('click',async()=>{
+    draw();
+    await issuePlusSaveCanvas(canvas,'issue_plus_magazine_1080x1920.png');
+  });
+
+  updateLabels();
+  draw();
+})();
+</script>
+
+<script>
+// iOS Safari/PWA compatible image export helper
+async function issuePlusSaveCanvas(canvas, filename){
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+  if(!blob){ alert('PNG 변환에 실패했습니다.'); return; }
+  const file = new File([blob], filename, {type:'image/png'});
+  if(navigator.canShare && navigator.canShare({files:[file]}) && navigator.share){
+    try { await navigator.share({files:[file], title:'이슈플러스 썸네일'}); return; } catch(e){ if(e && e.name==='AbortError') return; }
+  }
+  const url=URL.createObjectURL(blob);
+  const w=window.open(url,'_blank');
+  if(!w){ location.href=url; }
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+</script>
+
+</body>
+</html>
