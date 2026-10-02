@@ -20,6 +20,9 @@
 <!-- manifest: 안드로이드에서 "설치"로 인식되도록 하는 앱 정보 (data URI, 별도 서버 필요 없음) -->
 <link rel="manifest" id="manifestLink">
 
+
+<!-- Pretendard 웹폰트: iPhone/Android/PC 동일 폰트 렌더링 -->
+<link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <style>
 :root{
   --bg:#090d14;--panel:#111722;--panel2:#171f2b;--line:#2a3545;
@@ -285,6 +288,7 @@ button,.fileBtn{
 </div>
 
 <script>
+if(document.fonts && document.fonts.load){ document.fonts.load('900 88px Pretendard').catch(()=>{}); }
 /* ---------- 탭 전환 ---------- */
 const tabA=document.getElementById('tabA');
 const tabB=document.getElementById('tabB');
@@ -548,7 +552,7 @@ tabB.addEventListener('click',()=>{
     const ys=[1130,1255,1380];
 
     texts.forEach((text,index)=>{
-      const size=88;
+      const size=fitFont(text,maxWidth,88);
       ctx.font=`900 ${size}px Pretendard,"Noto Sans KR",Arial,sans-serif`;
       ctx.fillStyle=colors[index];
       ctx.shadowColor='rgba(0,0,0,.65)';
@@ -612,11 +616,69 @@ tabB.addEventListener('click',()=>{
 
   $('saveBtn').addEventListener('click', async ()=>{
     draw();
-    await issuePlusSaveCanvas(canvas,'issue_plus_9x16_1080x1920.png');
+    try{
+      const blob = await new Promise((resolve,reject)=>{
+        canvas.toBlob(result=>{
+          if(result) resolve(result);
+          else reject(new Error('PNG 변환 실패'));
+        },'image/png');
+      });
+
+      if('showSaveFilePicker' in window){
+        try{
+          const handle = await window.showSaveFilePicker({
+            suggestedName:'issue_plus_9x16_1080x1920.png',
+            types:[{
+              description:'PNG 이미지',
+              accept:{'image/png':['.png']}
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return;
+        }catch(error){
+          if(error && error.name === 'AbortError') return;
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'issue_plus_9x16_1080x1920.png';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      setTimeout(()=>URL.revokeObjectURL(url),3000);
+    }catch(error){
+      try{
+        const dataUrl = canvas.toDataURL('image/png');
+        const popup = window.open();
+        if(popup){
+          popup.document.write(
+            '<title>PNG 이미지 저장</title>'+
+            '<body style="margin:0;background:#111;text-align:center">'+
+            '<img src="'+dataUrl+'" style="max-width:100%;height:auto">'+
+            '</body>'
+          );
+          popup.document.close();
+        }else{
+          alert('브라우저에서 저장창을 막았습니다. 팝업을 허용한 뒤 다시 눌러 주세요.');
+        }
+      }catch(finalError){
+        alert('PNG 저장에 실패했습니다. 크롬 또는 사파리 브라우저에서 다시 실행해 주세요.');
+      }
+    }
   });
 
   updateLabels();
-  draw();
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(()=>draw()).catch(()=>draw());
+  }else{
+    draw();
+  }
 })();
 
 /* =========================================================
@@ -862,29 +924,41 @@ tabB.addEventListener('click',()=>{
 
   $('saveBtn').addEventListener('click',async()=>{
     draw();
-    await issuePlusSaveCanvas(canvas,'issue_plus_magazine_1080x1920.png');
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    if(!blob){alert('PNG 변환에 실패했습니다.');return;}
+
+    if('showSaveFilePicker' in window){
+      try{
+        const handle=await window.showSaveFilePicker({
+          suggestedName:'issue_plus_magazine_1080x1920.png',
+          types:[{description:'PNG 이미지',accept:{'image/png':['.png']}}]
+        });
+        const writable=await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      }catch(e){
+        if(e && e.name==='AbortError')return;
+      }
+    }
+
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='issue_plus_magazine_1080x1920.png';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
   });
 
   updateLabels();
-  draw();
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(()=>draw()).catch(()=>draw());
+  }else{
+    draw();
+  }
 })();
 </script>
-
-<script>
-// iOS Safari/PWA compatible image export helper
-async function issuePlusSaveCanvas(canvas, filename){
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-  if(!blob){ alert('PNG 변환에 실패했습니다.'); return; }
-  const file = new File([blob], filename, {type:'image/png'});
-  if(navigator.canShare && navigator.canShare({files:[file]}) && navigator.share){
-    try { await navigator.share({files:[file], title:'이슈플러스 썸네일'}); return; } catch(e){ if(e && e.name==='AbortError') return; }
-  }
-  const url=URL.createObjectURL(blob);
-  const w=window.open(url,'_blank');
-  if(!w){ location.href=url; }
-  setTimeout(()=>URL.revokeObjectURL(url),60000);
-}
-</script>
-
 </body>
 </html>
